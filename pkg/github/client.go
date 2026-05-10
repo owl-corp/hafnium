@@ -140,7 +140,7 @@ func (c *Client) ListFailedInvitations(ctx context.Context) (set map[string]stru
 }
 
 func (c *Client) RemoveFailedInvitation(ctx context.Context, username string) error {
-	Using RemoveOrgMembership to cancel invitation as documented in go-github
+	// Using RemoveOrgMembership to cancel invitation as documented in go-github
 	_, err := c.client.Organizations.RemoveOrgMembership(ctx, username, c.org)
 	return err
 }
