@@ -102,17 +102,19 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 			ident, err := e.keycloak.GetUserFederatedIdentity(ctx, userID, e.config.Keycloak.Provider)
 			if err != nil {
 				res.err = fmt.Errorf("failed to get %s identity for user %s: %w", e.config.Keycloak.Provider, username, err)
-			} else {
-				res.ident = ident
+				resultChan <- res
+				return
 			}
+			res.ident = ident
 
 			roles, err := e.keycloak.GetUserRoles(ctx, userID)
 			if err != nil {
-				log.Printf("Warning: failed to get roles for user %s: %v", username, err)
-			} else {
-				for _, r := range roles {
-					res.roles = append(res.roles, *r.Name)
-				}
+				res.err = fmt.Errorf("failed to get roles for user %s: %w", username, err)
+				resultChan <- res
+				return
+			}
+			for _, r := range roles {
+				res.roles = append(res.roles, *r.Name)
 			}
 
 			if discordIDs, ok := attrs["discordId"]; ok && len(discordIDs) > 0 {
@@ -125,6 +127,9 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 
 	for i := 0; i < len(kcUsers); i++ {
 		res := <-resultChan
+		if res.err != nil {
+			return nil, res.err
+		}
 		kcUserIDByUsername[res.username] = res.userID
 		if res.ident != nil {
 			kcIdentities[res.username] = *res.ident
@@ -152,6 +157,7 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 	type githubResult struct {
 		userID string
 		login  string
+		err    error
 	}
 
 	var unresolvedIDs []string
@@ -176,8 +182,7 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 				idInt, _ := strconv.ParseInt(userID, 10, 64)
 				resolvedLogin, err := e.github.GetUsernameForID(ctx, idInt)
 				if err != nil {
-					log.Printf("Warning: Could not resolve login for GitHub user ID %s", userID)
-					ghResChan <- githubResult{userID: userID}
+					ghResChan <- githubResult{userID: userID, err: fmt.Errorf("could not resolve login for GitHub user ID %s: %w", userID, err)}
 					return
 				}
 				ghResChan <- githubResult{userID: userID, login: resolvedLogin}
@@ -186,6 +191,9 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 
 		for i := 0; i < len(unresolvedIDs); i++ {
 			res := <-ghResChan
+			if res.err != nil {
+				return nil, res.err
+			}
 			if res.login != "" {
 				resolvedLoginsByUserID[res.userID] = res.login
 				e.resolvedLoginsCache[res.userID] = res.login
@@ -538,8 +546,7 @@ func (e *Engine) Sync(ctx context.Context) error {
 
 		current, err := e.github.ListTeamMembers(ctx, mapping.GithubTeamSlug)
 		if err != nil {
-			log.Printf("Error listing team members for %s: %v", mapping.GithubTeamSlug, err)
-			continue
+			return fmt.Errorf("error listing team members for %s: %w", mapping.GithubTeamSlug, err)
 		}
 		metrics.TeamMembersTotal.WithLabelValues(mapping.GithubTeamSlug).Set(float64(len(current)))
 

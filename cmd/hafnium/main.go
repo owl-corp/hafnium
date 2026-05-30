@@ -99,9 +99,24 @@ func run(cmd *cobra.Command, args []string) {
 }
 
 func runSync(ctx context.Context, engine *sync.Engine) {
-	log.Println("Starting sync run...")
-	if err := engine.Sync(ctx); err != nil {
-		log.Printf("Sync error: %v", err)
+	const maxRetries = 5
+	for i := 0; i < maxRetries; i++ {
+		log.Printf("Starting sync run (attempt %d/%d)...", i+1, maxRetries)
+		if err := engine.Sync(ctx); err != nil {
+			log.Printf("Sync error on attempt %d: %v", i+1, err)
+			if i < maxRetries-1 {
+				log.Println("Retrying in 5 seconds...")
+				select {
+				case <-time.After(5 * time.Second):
+					continue
+				case <-ctx.Done():
+					return
+				}
+			}
+			continue
+		}
+		log.Println("Sync run complete.")
+		return
 	}
-	log.Println("Sync run complete.")
+	log.Println("Sync failed after max retries.")
 }
