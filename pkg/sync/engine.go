@@ -54,6 +54,7 @@ type CommonInfo struct {
 	KeycloakUserRoles        map[string][]string          // KeycloakUserID -> RoleNames
 	KeycloakDiscordIDs       map[string]string            // KeycloakUserID -> DiscordID
 	KeycloakUserIDByUsername map[string]string            // KeycloakUsername -> KeycloakUserID
+	KeycloakUserEnabled      map[string]bool              // KeycloakUserID -> bool
 	GitHubOrgMembersByID     map[string]string            // GitHubID -> Login
 	ResolvedLoginsByUserID   map[string]string            // GitHubID -> Login
 	PendingInvitations       map[string]struct{}
@@ -72,6 +73,7 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 	kcUserRoles := make(map[string][]string)
 	kcDiscordIDs := make(map[string]string)
 	kcUserIDByUsername := make(map[string]string)
+	kcUserEnabled := make(map[string]bool)
 
 	type userResult struct {
 		username  string
@@ -79,6 +81,7 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 		ident     *keycloak.Identity
 		roles     []string
 		discordID string
+		enabled   bool
 		err       error
 	}
 
@@ -90,13 +93,18 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 		if u.Attributes != nil {
 			attributes = *u.Attributes
 		}
-		go func(username, userID string, attrs map[string][]string) {
+		enabled := true
+		if u.Enabled != nil {
+			enabled = *u.Enabled
+		}
+		go func(username, userID string, attrs map[string][]string, enabled bool) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			res := userResult{
 				username: username,
 				userID:   userID,
+				enabled:  enabled,
 			}
 
 			ident, err := e.keycloak.GetUserFederatedIdentity(ctx, userID, e.config.Keycloak.Provider)
@@ -122,7 +130,7 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 			}
 
 			resultChan <- res
-		}(*u.Username, *u.ID, attributes)
+		}(*u.Username, *u.ID, attributes, enabled)
 	}
 
 	for i := 0; i < len(kcUsers); i++ {
@@ -135,6 +143,7 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 			kcIdentities[res.username] = *res.ident
 		}
 		kcUserRoles[res.userID] = res.roles
+		kcUserEnabled[res.userID] = res.enabled
 		if res.discordID != "" {
 			kcDiscordIDs[res.userID] = res.discordID
 		}
@@ -218,6 +227,7 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 		KeycloakUserRoles:        kcUserRoles,
 		KeycloakDiscordIDs:       kcDiscordIDs,
 		KeycloakUserIDByUsername: kcUserIDByUsername,
+		KeycloakUserEnabled:      kcUserEnabled,
 		GitHubOrgMembersByID:     githubOrgMembers,
 		ResolvedLoginsByUserID:   resolvedLoginsByUserID,
 		PendingInvitations:       pending,
@@ -249,7 +259,11 @@ func (e *Engine) BuildOrgSyncPlan(info *CommonInfo) *OrgSyncPlan {
 	ignored := e.getIgnoredUsers()
 
 	desiredByUserID := make(map[string]string)
-	for _, ident := range info.KeycloakIdentities {
+	for username, ident := range info.KeycloakIdentities {
+		userID := info.KeycloakUserIDByUsername[username]
+		if !info.KeycloakUserEnabled[userID] {
+			continue
+		}
 		if login, ok := info.ResolvedLoginsByUserID[ident.UserID]; ok {
 			if _, ok := ignored[strings.ToLower(login)]; !ok {
 				desiredByUserID[ident.UserID] = login
@@ -425,6 +439,23 @@ func (e *Engine) Sync(ctx context.Context) error {
 
 	orgPlan := e.BuildOrgSyncPlan(info)
 
+	// Handle Disabled Users
+	for username, ident := range info.KeycloakIdentities {
+		userID := info.KeycloakUserIDByUsername[username]
+		if !info.KeycloakUserEnabled[userID] {
+			log.Printf("Handling disabled user %s", username)
+			_ = e.keycloak.RemoveUserFederatedIdentity(ctx, userID, e.config.Keycloak.Provider)
+
+			login := info.ResolvedLoginsByUserID[ident.UserID]
+			_ = e.discord.SendReport(e.config.Discord.LogChannelID, fmt.Sprintf(":warning: Keycloak user `%s` (GitHub: `%s`) is disabled. Removing the Keycloak GitHub link and removing from GitHub org.", username, login))
+
+			if discordID, ok := info.KeycloakDiscordIDs[userID]; ok {
+				msg := "Your GitHub organization access has been revoked because your Keycloak account is disabled."
+				_ = e.discord.SendDM(discordID, msg)
+			}
+		}
+	}
+
 	// Handle Failed Invites
 	for _, login := range orgPlan.SkippedFailed {
 		log.Printf("Handling failed invite for %s", login)
@@ -501,6 +532,10 @@ func (e *Engine) Sync(ctx context.Context) error {
 	kcToGithub := make(map[string]string)
 	ignored := e.getIgnoredUsers()
 	for user, ident := range info.KeycloakIdentities {
+		userID := info.KeycloakUserIDByUsername[user]
+		if !info.KeycloakUserEnabled[userID] {
+			continue
+		}
 		login := info.ResolvedLoginsByUserID[ident.UserID]
 		if _, ok := info.GitHubOrgMembersByID[ident.UserID]; ok {
 			if _, ok := ignored[strings.ToLower(login)]; !ok {
