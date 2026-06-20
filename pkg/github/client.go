@@ -43,7 +43,7 @@ func (c *Client) ListOrgMembers(ctx context.Context) (map[string]string, error) 
 
 func (c *Client) AddOrgMember(ctx context.Context, inviteeID int64) error {
 	_, _, err := c.client.Organizations.CreateOrgInvitation(ctx, c.org, &github.CreateOrgInvitationOptions{
-		InviteeID: github.Int64(inviteeID),
+		InviteeID: new(inviteeID),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to add org member ID %d: %w", inviteeID, err)

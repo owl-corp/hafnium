@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,7 +19,7 @@ import (
 )
 
 const (
-	GithubInviteLink    = "https://github.com/orgs/%s/invitation"
+	GithubInviteLink   = "https://github.com/orgs/%s/invitation"
 	KeycloakAccountURL = "%s/realms/%s/account/account-security/linked-accounts"
 )
 
@@ -133,7 +135,7 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 		}(*u.Username, *u.ID, attributes, enabled)
 	}
 
-	for i := 0; i < len(kcUsers); i++ {
+	for range kcUsers {
 		res := <-resultChan
 		if res.err != nil {
 			return nil, res.err
@@ -154,14 +156,10 @@ func (e *Engine) FetchCommonInfo(ctx context.Context) (*CommonInfo, error) {
 		return nil, err
 	}
 
-	for id, login := range githubOrgMembers {
-		e.resolvedLoginsCache[id] = login
-	}
+	maps.Copy(e.resolvedLoginsCache, githubOrgMembers)
 
 	resolvedLoginsByUserID := make(map[string]string)
-	for id, login := range githubOrgMembers {
-		resolvedLoginsByUserID[id] = login
-	}
+	maps.Copy(resolvedLoginsByUserID, githubOrgMembers)
 
 	type githubResult struct {
 		userID string
@@ -431,7 +429,7 @@ func (e *Engine) Sync(ctx context.Context) error {
 
 	// Ensure we have a fresh Keycloak session for this sync run
 	e.keycloak.ResetToken()
-	
+
 	info, err := e.FetchCommonInfo(ctx)
 	if err != nil {
 		return err
@@ -557,13 +555,7 @@ func (e *Engine) Sync(ctx context.Context) error {
 		// Find Keycloak users with this role
 		var desired []string
 		for userID, roles := range info.KeycloakUserRoles {
-			hasRole := false
-			for _, r := range roles {
-				if r == role {
-					hasRole = true
-					break
-				}
-			}
+			hasRole := slices.Contains(roles, role)
 			if hasRole {
 				// Find username for this userID
 				var username string
