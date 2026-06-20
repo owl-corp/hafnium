@@ -51,7 +51,7 @@ func (c *Client) GetUsers(ctx context.Context) ([]*gocloak.User, error) {
 	}
 
 	params := gocloak.GetUsersParams{
-		Max: gocloak.IntP(1000),
+		Max: new(1000),
 	}
 	users, err := c.client.GetUsers(ctx, c.token.AccessToken, c.realm, params)
 	if err != nil {

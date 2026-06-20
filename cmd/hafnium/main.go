@@ -100,7 +100,7 @@ func run(cmd *cobra.Command, args []string) {
 
 func runSync(ctx context.Context, engine *sync.Engine) {
 	const maxRetries = 5
-	for i := 0; i < maxRetries; i++ {
+	for i := range maxRetries {
 		log.Printf("Starting sync run (attempt %d/%d)...", i+1, maxRetries)
 		if err := engine.Sync(ctx); err != nil {
 			log.Printf("Sync error on attempt %d: %v", i+1, err)
