@@ -28,6 +28,7 @@ type DiscordConfig struct {
 	GuildID       string `mapstructure:"guildid"`
 	LogChannelID  string `mapstructure:"logchannelid"`
 	DebugThreadID string `mapstructure:"debugthreadid"`
+	BaseRoleID    string `mapstructure:"baseroleid"`
 }
 
 type SyncConfig struct {
@@ -66,6 +67,7 @@ func BindFlags(flags *pflag.FlagSet, v *viper.Viper) {
 	flags.String("discord-guildid", "", "Discord server ID")
 	flags.String("discord-logchannel", "", "Discord channel ID for logs")
 	flags.String("discord-debugthread", "", "Discord thread ID for sync reports")
+	flags.String("discord-baserole", "", "Discord base role ID")
 	flags.Duration("sync-interval", 5*time.Minute, "Interval between sync runs")
 	flags.String("sync-mappingfile", "mappings.toml", "Path to role mapping TOML file")
 	flags.Int("sync-parallelism", 20, "Number of concurrent API calls")
@@ -73,21 +75,22 @@ func BindFlags(flags *pflag.FlagSet, v *viper.Viper) {
 	flags.StringSlice("github-ignored-users", []string{"pydis-bot"}, "GitHub users to ignore")
 
 	mappings := map[string]string{
-		"keycloak-url":        "keycloak.url",
-		"keycloak-realm":      "keycloak.realm",
-		"keycloak-username":   "keycloak.username",
-		"keycloak-password":   "keycloak.password",
-		"keycloak-provider":   "keycloak.provider",
-		"github-token":        "github.token",
-		"github-org":          "github.org",
-		"discord-token":       "discord.token",
-		"discord-guildid":     "discord.guildid",
-		"discord-logchannel":  "discord.logchannelid",
-		"discord-debugthread": "discord.debugthreadid",
-		"sync-interval":       "sync.interval",
-		"sync-mappingfile":    "sync.mappingfile",
-		"sync-parallelism":    "sync.parallelism",
-		"metrics-addr":        "metrics.addr",
+		"keycloak-url":         "keycloak.url",
+		"keycloak-realm":       "keycloak.realm",
+		"keycloak-username":    "keycloak.username",
+		"keycloak-password":    "keycloak.password",
+		"keycloak-provider":    "keycloak.provider",
+		"github-token":         "github.token",
+		"github-org":           "github.org",
+		"discord-token":        "discord.token",
+		"discord-guildid":      "discord.guildid",
+		"discord-logchannel":   "discord.logchannelid",
+		"discord-debugthread":  "discord.debugthreadid",
+		"discord-baserole":     "discord.baseroleid",
+		"sync-interval":        "sync.interval",
+		"sync-mappingfile":     "sync.mappingfile",
+		"sync-parallelism":     "sync.parallelism",
+		"metrics-addr":         "metrics.addr",
 		"github-ignored-users": "github.ignored_users",
 	}
 
@@ -137,6 +140,7 @@ func (c *Config) Validate() error {
 		"HAFNIUM_DISCORD_GUILDID":       c.Discord.GuildID,
 		"HAFNIUM_DISCORD_LOGCHANNELID":  c.Discord.LogChannelID,
 		"HAFNIUM_DISCORD_DEBUGTHREADID": c.Discord.DebugThreadID,
+		"HAFNIUM_DISCORD_BASEROLEID":    c.Discord.BaseRoleID,
 	}
 
 	for env, val := range fields {

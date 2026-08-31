@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	GithubInviteLink    = "https://github.com/orgs/%s/invitation"
+	GithubInviteLink   = "https://github.com/orgs/%s/invitation"
 	KeycloakAccountURL = "%s/realms/%s/account/account-security/linked-accounts"
 )
 
@@ -431,7 +431,7 @@ func (e *Engine) Sync(ctx context.Context) error {
 
 	// Ensure we have a fresh Keycloak session for this sync run
 	e.keycloak.ResetToken()
-	
+
 	info, err := e.FetchCommonInfo(ctx)
 	if err != nil {
 		return err
@@ -443,6 +443,12 @@ func (e *Engine) Sync(ctx context.Context) error {
 	for username, ident := range info.KeycloakIdentities {
 		userID := info.KeycloakUserIDByUsername[username]
 		if !info.KeycloakUserEnabled[userID] {
+			if discordID, ok := info.KeycloakDiscordIDs[userID]; ok {
+				if e.discord.HasBaseRole(e.config.Discord.GuildID, discordID, e.config.Discord.BaseRoleID) {
+					_ = e.discord.SendReport(e.config.Discord.LogChannelID, fmt.Sprintf(":rotating_light: User `%s` has the base role in Discord but is disabled in Keycloak, skipping further handling.", username))
+					continue
+				}
+			}
 			log.Printf("Handling disabled user %s", username)
 			_ = e.keycloak.RemoveUserFederatedIdentity(ctx, userID, e.config.Keycloak.Provider)
 

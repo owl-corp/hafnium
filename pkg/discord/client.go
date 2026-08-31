@@ -2,6 +2,7 @@ package discord
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -36,6 +37,15 @@ func (c *Client) SendReport(channelID, message string) error {
 		return fmt.Errorf("failed to send report to %s: %w", channelID, err)
 	}
 	return nil
+}
+
+func (c *Client) HasBaseRole(guildID string, userID string, baseRoleID string) bool {
+	member, err := c.session.GuildMember(guildID, userID)
+	if err != nil {
+		return false
+	}
+
+	return slices.Contains(member.Roles, baseRoleID)
 }
 
 func (c *Client) Close() error {
