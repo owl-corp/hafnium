@@ -525,6 +525,19 @@ func (e *Engine) Sync(ctx context.Context) error {
 	// Apply Org Removals
 	var orgRemoved []string
 	for _, login := range orgPlan.Diff.ToRemove {
+		// Safety check: never remove someone who still holds the Discord base role.
+		var discordID string
+		for user, ident := range info.KeycloakIdentities {
+			if strings.EqualFold(info.ResolvedLoginsByUserID[ident.UserID], login) {
+				discordID = info.KeycloakDiscordIDs[info.KeycloakUserIDByUsername[user]]
+				break
+			}
+		}
+		if discordID != "" && e.discord.HasBaseRole(e.config.Discord.GuildID, discordID, e.config.Discord.BaseRoleID) {
+			log.Printf("Skipping removal of %s from org: user still has base role in Discord", login)
+			continue
+		}
+
 		err := e.github.RemoveOrgMember(ctx, login)
 		if err == nil {
 			orgRemoved = append(orgRemoved, login)
